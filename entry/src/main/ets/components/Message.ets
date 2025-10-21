@@ -17,6 +17,9 @@ interface MessageItem {
 export struct Message {
   @State activeTab: number = 0;
   @State searchText: string = '';
+  @State filteredMessages: MessageItem[] = [];
+  @State showSearchSuggestions: boolean = false;
+  @State searchHistory: string[] = [];
   @State messages: MessageItem[] = [
     {
       id: 1,
@@ -25,7 +28,7 @@ export struct Message {
       category: "设计",
       color: "#0A59F7",
       time: "10:30",
-      unread: 2,
+      unread: 0,
       avatar: $r('app.media.album1')
     },
     {
@@ -45,7 +48,7 @@ export struct Message {
       category: "旅行",
       color: "#0FBA83",
       time: "昨天",
-      unread: 1,
+      unread: 0,
       avatar: $r('app.media.album3')
     },
     {
@@ -80,8 +83,73 @@ export struct Message {
     }
   ];
 
+  aboutToAppear() {
+    // 初始化时显示所有消息
+    this.filteredMessages = this.messages.slice();
+  }
 
+  // 搜索过滤方法
+  filterMessages(searchText: string) {
+    if (!searchText || searchText.trim() === '') {
+      // 如果搜索文本为空，显示所有消息
+      this.filteredMessages = this.messages.slice();
+    } else {
+      // 根据用户名、消息内容、类别进行搜索
+      this.filteredMessages = this.messages.filter(message => {
+        const searchLower = searchText.toLowerCase();
+        return message.name.toLowerCase().includes(searchLower) ||
+        message.content.toLowerCase().includes(searchLower) ||
+        message.category.toLowerCase().includes(searchLower);
+      });
+    }
+  }
 
+  // 高亮搜索关键词
+  highlightText(text: string, searchText: string): string {
+    if (!searchText || searchText.trim() === '') {
+      return text;
+    }
+
+    const regex = new RegExp(`(${searchText})`, 'gi');
+    return text.replace(regex, '<mark>$1</mark>');
+  }
+
+  // 获取搜索建议
+  getSearchSuggestions(searchText: string): string[] {
+    if (!searchText || searchText.trim() === '') {
+      return [];
+    }
+
+    const suggestions: string[] = [];
+    const searchLower = searchText.toLowerCase();
+
+    // 从消息中提取建议
+    this.messages.forEach(message => {
+      if (message.name.toLowerCase().includes(searchLower)) {
+        suggestions.push(message.name);
+      }
+      if (message.category.toLowerCase().includes(searchLower)) {
+        suggestions.push(message.category);
+      }
+    });
+
+    // 去重并限制数量
+    const uniqueSuggestions = Array.from(new Set(suggestions));
+    return uniqueSuggestions.slice(0, 5);
+  }
+
+  // 添加搜索历史
+  addToSearchHistory(searchText: string) {
+    if (searchText && searchText.trim() !== '') {
+      const trimmedText = searchText.trim();
+      // 移除重复项
+      this.searchHistory = this.searchHistory.filter(item => item !== trimmedText);
+      // 添加到开头
+      this.searchHistory.unshift(trimmedText);
+      // 限制历史记录数量
+      this.searchHistory = this.searchHistory.slice(0, 10);
+    }
+  }
 
   build() {
     Column() {
@@ -126,6 +194,13 @@ export struct Message {
           .height(20)
           .fillColor('#999999')
           .margin({ left: 15, right: 10 })
+          .onClick(() => {
+            if (this.searchText) {
+              // 如果有搜索内容，清除搜索
+              this.searchText = '';
+              this.filterMessages('');
+            }
+          })
 
         TextInput({
           placeholder: '搜索联系人或消息',
@@ -138,6 +213,17 @@ export struct Message {
           .layoutWeight(1)
           .onChange((value: string) => {
             this.searchText = value;
+            this.filterMessages(value);
+            this.showSearchSuggestions = value.length > 0;
+          })
+          .onFocus(() => {
+            this.showSearchSuggestions = this.searchText.length > 0;
+          })
+          .onBlur(() => {
+            // 延迟隐藏建议，让用户有时间点击
+            setTimeout(() => {
+              this.showSearchSuggestions = false;
+            }, 200);
           })
       }
       .width('100%')
@@ -146,9 +232,134 @@ export struct Message {
       .padding({ right: 15 })
       .margin({ top: 8 })
 
+      // 搜索建议下拉列表
+      if (this.showSearchSuggestions) {
+        Column() {
+          // 搜索建议
+          if (this.getSearchSuggestions(this.searchText).length > 0) {
+            Column() {
+              Text('搜索建议')
+                .fontSize(12)
+                .fontColor('#999999')
+                .margin({ left: 16, top: 8, bottom: 4 })
+                .alignSelf(ItemAlign.Start)
+
+              ForEach(this.getSearchSuggestions(this.searchText), (suggestion: string) => {
+                Row() {
+                  Image($r('app.media.ic_search'))
+                    .width(16)
+                    .height(16)
+                    .fillColor('#999999')
+                    .margin({ right: 8 })
+
+                  Text(suggestion)
+                    .fontSize(14)
+                    .fontColor('#333333')
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+                .onClick(() => {
+                  this.searchText = suggestion;
+                  this.filterMessages(suggestion);
+                  this.showSearchSuggestions = false;
+                  this.addToSearchHistory(suggestion);
+                })
+              })
+            }
+          }
+
+          // 搜索历史
+          if (this.searchHistory.length > 0) {
+            Column() {
+              Text('搜索历史')
+                .fontSize(12)
+                .fontColor('#999999')
+                .margin({ left: 16, top: 8, bottom: 4 })
+                .alignSelf(ItemAlign.Start)
+
+              ForEach(this.searchHistory.slice(0, 5), (historyItem: string) => {
+                Row() {
+                  Image($r('app.media.ic_search'))
+                    .width(16)
+                    .height(16)
+                    .fillColor('#999999')
+                    .margin({ right: 8 })
+
+                  Text(historyItem)
+                    .fontSize(14)
+                    .fontColor('#666666')
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+                .onClick(() => {
+                  this.searchText = historyItem;
+                  this.filterMessages(historyItem);
+                  this.showSearchSuggestions = false;
+                })
+              })
+            }
+          }
+        }
+        .width('100%')
+        .backgroundColor(Color.White)
+        .border({ width: { bottom: 1 }, color: '#E5E5E5' })
+        .margin({ top: 1 })
+      }
+
+      // 搜索结果统计
+      if (this.searchText) {
+        Row() {
+          Text(`找到 ${this.filteredMessages.length} 个相关联系人`)
+            .fontSize(14)
+            .fontColor('#666666')
+
+          Blank()
+
+          Text('清除搜索')
+            .fontSize(14)
+            .fontColor('#007AFF')
+            .onClick(() => {
+              this.searchText = '';
+              this.filterMessages('');
+            })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .backgroundColor('#F8F9FA')
+        .margin({ top: 8 })
+      }
+
+      // 搜索结果提示
+      if (this.searchText && this.filteredMessages.length === 0) {
+        Column() {
+          Image($r('app.media.ic_search'))
+            .width(48)
+            .height(48)
+            .fillColor('#CCCCCC')
+            .margin({ bottom: 16 })
+
+          Text('未找到相关联系人')
+            .fontSize(16)
+            .fontColor('#999999')
+            .margin({ bottom: 8 })
+
+          Text(`没有找到包含"${this.searchText}"的联系人`)
+            .fontSize(14)
+            .fontColor('#CCCCCC')
+        }
+        .width('100%')
+        .height(200)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(Color.White)
+        .margin({ top: 8 })
+      }
+
       // 消息列表
       List() {
-        ForEach(this.messages, (message: MessageItem) => {
+        ForEach(this.filteredMessages, (message: MessageItem) => {
           ListItem() {
             Row() {
               // 头像
@@ -210,12 +421,6 @@ export struct Message {
             .padding(15)
             .backgroundColor(Color.White)
             .onClick(() => {
-              // 将当前消息标记为已读（unread设为0）
-              const messageIndex = this.messages.findIndex(msg => msg.id === message.id);
-              if (messageIndex !== -1) {
-                this.messages[messageIndex].unread = 0;
-              }
-              // promptAction.showToast({ message: `打开与${message.name}的对话` });
               router.pushUrl({
                 url: "components/ChatPage",
                 params: {
@@ -236,6 +441,5 @@ export struct Message {
     .height('100%')
     .backgroundColor('#f5f7fa')
   }
-
 }
 
